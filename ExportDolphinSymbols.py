@@ -57,7 +57,7 @@ def listSyms():
 			"type":  str(sym.dataType.displayName),
 		}
 
-path = str(askFile("Excport Symbol Map", "Export"))
+path = str(askFile("Export Symbol Map", "Export"))
 nFuncs, nSyms = 0, 0
 with open(path, "wt") as file:
 	monitor.setMessage("Listing functions...")
