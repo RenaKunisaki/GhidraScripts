@@ -1,6 +1,6 @@
 #Set ObjectFileStruct's label to the object's name.
 #@author Rena
-#@category Struct
+#@category StarFox
 #@keybinding 
 #@menupath 
 #@toolbar 
