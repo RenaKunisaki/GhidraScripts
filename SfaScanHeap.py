@@ -1,9 +1,9 @@
 #Scan heaps and automatically mark memory regions.
 #@author Rena
 #@category StarFox
-#@keybinding 
-#@menupath 
-#@toolbar 
+#@keybinding
+#@menupath
+#@toolbar
 
 import jarray
 import struct
@@ -65,19 +65,24 @@ class HeapEntry(Struct):
     }
 
     _tags = {
-        0x00000005: "Map Blocks",
+        0x00000005: "MapBlocks",
         0x00000006: "Texture",
-        0x00000009: "AnimDataStruct",
+        0x00000009: "ModelData",
         0x0000000A: "Models",
+        0x0000000B: "MaybeAudio",
         0x0000000E: "Objects",
         0x00000010: "VOX",
         0x00000011: "Stack",
-        0x00000018: "Vec3f Array",
+        0x00000015: "TextureData",
+        0x00000017: "TexturePtrs",
+        0x00000018: "Vec3fArray",
         0x0000001A: "ModelStruct",
-        0x000000FF: "Unknown 32-byte buffer",
-        0x7D7D7D7D: "Data File",
-        0x7F7F7FFF: "Compressed File",
-        0xFFFF00FF: "Unknown, Map-related",
+        0x000000FF: "Unknown32ByteBuffer",
+        0x7D7D7D7D: "DataFile",
+        0x7F7F7FFF: "CompressedFile",
+        0xA0A0A0A0: "Texture",
+        0xFACEFEED: "FACEFEED",
+        0xFFFF00FF: "IntersectPoint",
         0xFFFFFFFF: "Savegame",
     }
 

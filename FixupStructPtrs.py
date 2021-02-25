@@ -1,9 +1,9 @@
 #Given pointer to struct, change destination type to that struct.
 #@author Rena
 #@category Struct
-#@keybinding 
-#@menupath 
-#@toolbar 
+#@keybinding
+#@menupath
+#@toolbar
 
 AF = currentProgram.getAddressFactory()
 listing = currentProgram.getListing()
@@ -39,6 +39,7 @@ numFixed, numFailed, numSkipped = 0, 0, 0
 def fix(addr):
 	global numFixed
 	global numFailed
+	global numSkipped
 	if addrToInt(addr) == 0:
 		numSkipped += 1
 		return
@@ -57,7 +58,7 @@ if data.isArray():
 	#printf("array, length %d\n", count)
 	for i in range(count):
 		fix(data.getComponent(i).value)
-		
+
 else:
 	AF = currentProgram.getAddressFactory()
 	incr = data.getLength()
