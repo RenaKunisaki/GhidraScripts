@@ -56,8 +56,8 @@ def listParams(func):
             reg = 'stack'
             try: stackOffs = hex(param.getStackOffset())
             except:
-                print("No register or stack for param %r in DLL 0x%X func 0x%X" % (
-                    param, iDll, iFunc))
+                print("No register or stack for param %r in func 0x%X" % (
+                    param, addrToInt(func.body.minAddress)))
                 reg = None
         else: reg = reg.getName()
         pName = param.getName()

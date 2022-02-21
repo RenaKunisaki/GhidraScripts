@@ -64,7 +64,7 @@ def processAddr(addr):
         return # probably not a float
     elif math.isinf(val): sVal = 'infinity'
     elif val >= 340282346638528859811704183484516925440: sVal = 'infinity'
-    elif val <= -340282346638528859811704183484516925440: sVal = 'minusInfinity'
+    elif val <= -340282346638528859811704183484516925440: sVal = 'mInfinity'
     elif ((abs(val) < 0.000000001 and abs(val) > 0)
     or     abs(val) > 562949953421312):
         printf("%08X: value is %s, probably not float\n", addr, val)

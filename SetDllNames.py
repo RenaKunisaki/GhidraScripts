@@ -15,26 +15,10 @@ from ghidra.program.model.listing import ParameterImpl
 from ghidra.program.model.symbol import SourceType
 
 #xmlPath = '/mnt/guilmon/home/rena/projects/games/hax/sfa/data/K'
-#xmlPath = '/mnt/guilmon/home/rena/projects/games/hax/sfa/data/U0'
-xmlPath = '/mnt/guilmon/home/rena/projects/games/hax/sfa/data/KD'
+xmlPath = '/mnt/guilmon/home/rena/projects/games/hax/sfa/data/U0'
+#xmlPath = '/mnt/guilmon/home/rena/projects/games/hax/sfa/data/KD'
 dllsXml  = ET.parse(os.path.join(xmlPath, 'dlls.xml')).getroot()
 interfaces = ET.parse(os.path.join(xmlPath, 'dllfuncs.xml')).getroot()
-
-listing = currentProgram.getListing()
-AF = currentProgram.getAddressFactory()
-DT = currentProgram.getDataTypeManager()
-mem = currentProgram.getMemory()
-
-prgName  = currentProgram.name
-data     = listing.getDataAt(currentAddress)
-NUM_DLLS = data .getLength() / data.getComponent(0).getLength()
-#NUM_DLLS = 0x2C2
-
-
-# ghidra is fussy
-def fixDataType(typ):
-    return typ.replace(' ', '').replace('*', ' *')
-
 
 def addrToInt(addr):
     return int(str(addr), 16)
@@ -42,6 +26,31 @@ def addrToInt(addr):
 def intToAddr(addr):
     return AF.getAddress("0x%08X" % addr)
 
+listing = currentProgram.getListing()
+AF = currentProgram.getAddressFactory()
+DT = currentProgram.getDataTypeManager()
+mem = currentProgram.getMemory()
+
+startAddr = intToAddr(int(dllsXml.get('tableAddress'), 16))
+prgName  = currentProgram.name
+data     = listing.getDataAt(startAddr)
+NUM_DLLS = data .getLength() / data.getComponent(0).getLength()
+#NUM_DLLS = 0x2C2
+
+dt_pointer = DT.getDataType('/pointer')
+dt_dll = DT.getDataType(prgName+'/SFA/DLL/DLL')
+
+# ghidra is fussy
+def fixDataType(typ):
+    return typ.replace(' ', '').replace('*', ' *')
+
+def readStruct(addr, fmt):
+    size = struct.calcsize(fmt)
+    data = jarray.zeros(size, 'b')
+    mem.getBytes(addr, data)
+    r = struct.unpack(fmt, data)
+    if len(r) == 1: r = r[0] # grumble
+    return r
 
 def removeLabels(addrStart, addrEnd):
     addressSetView = AF.getAddressSet(addrStart, addrEnd)
@@ -77,16 +86,30 @@ def updateDllNames():
     newDLL_ID  .add("NO_DLL", 0xFFFFFFFF)
     newDLL_ID16.add("NO_DLL", 0xFFFF)
 
-    #DT.getDataType(prgName+"/SFA/DLL/DLL_ID")  .replaceWith(newDLL_ID)
-    #DT.getDataType(prgName+"/SFA/DLL/DLL_ID16").replaceWith(newDLL_ID16)
-    DT.getDataType(prgName+"/DLL_ID")  .replaceWith(newDLL_ID)
-    DT.getDataType(prgName+"/DLL_ID16").replaceWith(newDLL_ID16)
+    id32 = DT.getDataType(prgName+"/SFA/DLL/DLL_ID")
+    id16 = DT.getDataType(prgName+"/SFA/DLL/DLL_ID16")
+    if id32 is None: id32 = DT.getDataType(prgName+"/DLL_ID")
+    if id16 is None: id16 = DT.getDataType(prgName+"/DLL_ID16")
+    id32.replaceWith(newDLL_ID)
+    id16.replaceWith(newDLL_ID16)
 
 
 def setName(fn, name):
     if name is None:
         raise ValueError("function name is None")
-    if fn.name == name: return
+
+    ns = None
+    if '::' in name:
+        ns, name = name.split('::')
+        ns = ghidra.app.util.NamespaceUtils.createNamespaceHierarchy(ns, None,
+            currentProgram, fn.body.minAddress, SourceType.IMPORTED)
+        try:
+            fn.setParentNamespace(ns)
+        except DuplicateNameException:
+            print("Duplicate function name '%s' in namespace '%s'" % (
+                name, ns.name))
+
+    #if fn.name == name: return
     #if(fn.name.startswith("FUN_")
     #or fn.name.startswith("doNothing_")
     #or fn.name.startswith("Fn_")
@@ -94,10 +117,12 @@ def setName(fn, name):
     #or 'obj[' in fn.name
     #or ':' in fn.name or '.' in fn.name
     #or fn.name.startswith('dll_')):
-    #    fn.setName(name, SourceType.ANALYSIS)
+    #    fn.setName(name, SourceType.IMPORTED)
     #else:
     #    print("Not changing name of %s to %s" % (fn.name, name))
-    fn.setName(name, SourceType.ANALYSIS)
+    #0print("%s => %s" % (fn.name, name))
+    removeLabels(fn.body.minAddress, fn.body.minAddress.add(3))
+    fn.setName(name, SourceType.IMPORTED)
 
 
 def setParams(fn, funcDef, comment, oldComment):
@@ -123,7 +148,7 @@ def setParams(fn, funcDef, comment, oldComment):
                 name, reg, funcDef.get('address', 0xFFFFFFFF)))
             return
         try:
-            pObj = ParameterImpl(name, dt, loc, currentProgram, SourceType.ANALYSIS)
+            pObj = ParameterImpl(name, dt, loc, currentProgram, SourceType.IMPORTED)
         except:
             print("Failed creating param", name, typ, dt)
             return
@@ -140,10 +165,12 @@ def setParams(fn, funcDef, comment, oldComment):
         fn.replaceParameters(
             ghidra.program.model.listing.Function.FunctionUpdateType.CUSTOM_STORAGE, # updateType
             True, # force (remove conflicting local params)
-            SourceType.ANALYSIS, # source
+            SourceType.IMPORTED, # source
             params)
     except Exception as ex:
         print("Failed setting signature of", fn, ex)
+    except:
+        print("Failed setting signature of", fn, "because of aliens")
 
 
 def setReturn(fn, funcDef, comment, oldComment):
@@ -159,7 +186,7 @@ def setReturn(fn, funcDef, comment, oldComment):
         #elif ret != 'void':
         else:
             # XXX reg? multiple returns?
-            try: fn.setReturnType(dt[0], SourceType.ANALYSIS)
+            try: fn.setReturnType(dt[0], SourceType.IMPORTED)
             except:
                 print("Failed setting return of %s to type %s" % (fn, ret))
 
@@ -237,7 +264,7 @@ def getSig(iDll, iFunc):
     fields = ('name', 'stub', 'return', 'returns')
     for f in fields: result[f] = None
 
-    ifaceName = dll.get('interface', None)
+    ifaceName = dll.get('interface', 'common')
     if ifaceName is not None:
         iface = interfaces.find('./interface[@name="%s"]' % ifaceName)
         if iface is None:
@@ -309,9 +336,8 @@ def getSig(iDll, iFunc):
     return result
 
 
-
 def handleFunc(iDll, iFunc, fp, dllName):
-    if fp is None or fp < 0x80000000 or fp > 0x81800000: return
+    if fp is None or fp < 0x80000000 or fp > 0x81800000: return None
 
     name = 'func%d' % iFunc
     funcDef = getSig(iDll, iFunc)
@@ -321,7 +347,7 @@ def handleFunc(iDll, iFunc, fp, dllName):
             ret = funcDef.get('return', None)
             if ret is None: name += '_nop'
             else: name += '_ret_' + (str(ret).replace('-', 'm'))
-    name = '%s_%s' % (dllName, name)
+    name = '%s::%s' % (dllName, name)
 
     # wtf?
     while ('_%02X_%02X' % (iDll, iDll)) in name:
@@ -333,8 +359,12 @@ def handleFunc(iDll, iFunc, fp, dllName):
     fn = listing.getFunctionAt(addr)
     if fn is None:
         #print("making function at", fp)
-        #listing.clearCodeUnits(addr, addr.add(4), False)
+        listing.clearCodeUnits(addr, addr.add(4), False)
         createFunction(addr, name)
+        fn = listing.getFunctionAt(addr)
+        if fn is None:
+            print("failed making function at", addr)
+            return None
     else: setName(fn, name)
     disassemble(addr) # ensure actually code here
 
@@ -342,16 +372,22 @@ def handleFunc(iDll, iFunc, fp, dllName):
         fn = listing.getFunctionAt(addr)
         setFuncSig(fn, funcDef)
 
+    return fn
 
 
-def handleDll(idx, obj, addr):
-    flags = obj.getComponent(2)
-    count = obj.getComponent(3)
+def handleDll(idx, addr):
+    # ensure there's a DLL struct
+    listing.clearCodeUnits(addr, addr.add(0x18), False)
+    listing.createData(addr, dt_dll)
+
+    obj   = listing.getCodeUnitAt(addr)
+    flags = obj.getComponent(2) # offsRoData
+    count = obj.getComponent(3) # exportCount
     if count is None or flags is None: return
 
     # create label for DLL
-    #DLL_ID = DT.getDataType(prgName+"/SFA/DLL/DLL_ID")
-    DLL_ID = DT.getDataType(prgName+"/DLL_ID")
+    DLL_ID = DT.getDataType(prgName+"/SFA/DLL/DLL_ID")
+    if DLL_ID is None: DLL_ID = DT.getDataType(prgName+"/DLL_ID")
     dllName = DLL_ID.getName(idx)
     if dllName is None: dllName = "dll_%02X" % idx
     removeLabels(addr, addr.add(3))
@@ -372,13 +408,26 @@ def handleDll(idx, obj, addr):
     createLabel(addr.add(0x18), "%s_funcs" % dllName, False)
 
     # create functions and/or rename existing functions
+    dll = dllsXml.find('./dll[@id="0x%04X"]' % idx)
+    srcFile = dll.attrib.get('srcfile', None)
     for i in range(1 + nFuncs):
+        ptrAddr = addr.add((i * 4) + 0x10)
+        # get the pointer
         #fp = obj.getComponent(5+i)
-        #fp = listing.getDataAt(addr.add((i * 4) + 0x10))
-        data = jarray.zeros(4, "b")
-        mem.getBytes(addr.add((i * 4) + 0x10), data)
-        fp = struct.unpack('>I', data)[0] # grumble
-        handleFunc(idx, i, fp, dllName)
+        #fp = listing.getDataAt(ptrAddr)
+        fp = readStruct(ptrAddr, '>I')
+
+        # make the pointer a pointer
+        if i > 1:
+            listing.clearCodeUnits(ptrAddr, ptrAddr.add(3), False)
+            listing.createData(ptrAddr, dt_pointer)
+
+        # create the function
+        fn = handleFunc(idx, i, fp, dllName)
+
+        # add a tag for the source filename
+        if srcFile is not None and fn is not None:
+            fn.addTag(srcFile)
 
 
 def run():
@@ -392,9 +441,9 @@ def run():
     monitor.setMessage("Update DLLs...")
     for i in range(NUM_DLLS):
         addr = data.getComponent(i).value
-        obj  = listing.getCodeUnitAt(addr)
-        if obj is not None:
-            handleDll(i, obj, addr)
+        addrI = addrToInt(addr)
+        if addrI >= 0x80000000 and addrI < 0x81800000:
+            handleDll(i, addr)
         monitor.checkCanceled()
         monitor.incrementProgress(1)
 

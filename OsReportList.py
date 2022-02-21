@@ -12,6 +12,7 @@ from array import array
 from ghidra.app.plugin.core.analysis import AutoAnalysisManager
 from ghidra.app.plugin.core.analysis import ConstantPropagationAnalyzer
 from ghidra.util.classfinder import ClassSearcher
+from ghidra.program.model.symbol import SourceType
 from ghidra.program.util import SymbolicPropogator
 listing = currentProgram.getListing()
 AF      = currentProgram.getAddressFactory()
@@ -47,85 +48,16 @@ regTarget('debugprint',    rMsg=3)
 regTarget('debugprintf',   rMsg=3)
 regTarget('debugprintfxy', rMsg=5)
 regTarget('debugprintxy',  rMsg=5)
+regTarget('debugPrint_80191a90', rMsg=5)
 regTarget('diprintf',      rMsg=3)
 regTarget('logprintf',     rMsg=3)
+regTarget('_osdebugprint', rMsg=3)
+regTarget('_osdebugprint2',rMsg=3)
 regTarget('ospanic',       rFile=3, rLine=4, rMsg=5)
 regTarget('osreport',      rMsg=3)
 regTarget('panic')
 regTarget('printf',        rMsg=3)
 regTarget('reportexception')
-
-
-class Executor(TableChooserExecutor):
-    def getButtonName(self):
-        return "Do a Thing"
-
-    def execute(self, row):
-        return False # do not remove row
-
-
-class FuncNameColumn(StringColumnDisplay):
-    def getColumnName(self):
-        return "Func Name"
-
-    def getColumnValue(self, row):
-        return row.result['funcname']
-
-class FunctionColumn(StringColumnDisplay):
-    def getColumnName(self):
-        return "Function"
-
-    def getColumnValue(self, row):
-        return row.result['function']
-
-class FileColumn(StringColumnDisplay):
-    def getColumnName(self):
-        return "File"
-
-    def getColumnValue(self, row):
-        return row.result['file']
-
-class LineColumn(StringColumnDisplay):
-    def getColumnName(self):
-        return "Line"
-
-    def getColumnValue(self, row):
-        return row.result['line']
-
-class CallColumn(StringColumnDisplay):
-    def getColumnName(self):
-        return "Call"
-
-    def getColumnValue(self, row):
-        return row.result['call']
-
-class MessageColumn(StringColumnDisplay):
-    def getColumnName(self):
-        return "Message"
-
-    def getColumnValue(self, row):
-        return row.result['message']
-
-
-class PrintListResult(AddressableRowObject):
-    def __init__(self, result):
-        self.result = result
-
-    def getAddress(self):
-        return intToAddr(self.result['address'])
-
-def makeDialog():
-    executor = Executor()
-    tbl = createTableChooserDialog("Print calls", executor)
-    tbl.addCustomColumn(FileColumn())
-    tbl.addCustomColumn(LineColumn())
-    tbl.addCustomColumn(FuncNameColumn())
-    tbl.addCustomColumn(FunctionColumn())
-    tbl.addCustomColumn(CallColumn())
-    tbl.addCustomColumn(MessageColumn())
-    tbl.show()
-    tbl.setMessage("Running...")
-    return tbl
 
 
 def addrToInt(addr):
@@ -191,8 +123,8 @@ def analyzeFunction(function, monitor):
 def movePastDelaySlot(addr):
     inst = getInstructionAt(addr)
     if inst.getDelaySlotDepth() > 0:
+        inst = inst.getNext()
         while True:
-            inst = inst.getNext()
             if not inst.isInDelaySlot(): break
     return inst.getAddress()
 
@@ -208,10 +140,119 @@ def getMsg(prop, nextAddr, instr, reg=3):
     return '<unknown>'
 
 
+# this doesn't actually work and I have no idea why
+_dialog = None
+_rows   = {} # address => row
+def doApplyNames(executor):
+    global _dialog
+    print("Abot to get the selected row list")
+    selected = list(_dialog.getSelectedRowObjects())
+    print("Applying %d rows..." % len(selected))
+    for row in selected:
+        addr = addrToInt(row.getAddress())
+        item = _rows[addr]
+        assert item
+        if item['funcname'] != '':
+            funcName = item['funcName']
+        elif item['file'] != '':
+            funcName = '%s_fn%08X' % (item['file'], addr)
+        else: continue
+
+        fn = listing.getFunctionAt(row.getAddress())
+        if fn is not None:
+            print("Set func name at 0x%08X: %s" % (addr, funcName))
+            fn.setname(funcName, SourceType.USER_DEFINED)
+        else: print("No function at 0x%08X" % addr)
+
+        #'address':  addrI,
+        #'file':     fileName,
+        #'line':     str(lineNo),
+        #'funcname': funcName,
+        #'function': func.getName(),
+        #'call':     name,
+        #'message':  msg,
+    print("Done.")
+
+
+
+class Executor(TableChooserExecutor):
+    def getButtonName(self):
+        return "Apply Names"
+
+    def execute(self, row):
+        doApplyNames(self)
+        return False # do not remove row
+
+
+class FuncNameColumn(StringColumnDisplay):
+    def getColumnName(self):
+        return "Func Name"
+
+    def getColumnValue(self, row):
+        return row.result['funcname']
+
+class FunctionColumn(StringColumnDisplay):
+    def getColumnName(self):
+        return "Function"
+
+    def getColumnValue(self, row):
+        return row.result['function']
+
+class FileColumn(StringColumnDisplay):
+    def getColumnName(self):
+        return "File"
+
+    def getColumnValue(self, row):
+        return row.result['file']
+
+class LineColumn(StringColumnDisplay):
+    def getColumnName(self):
+        return "Line"
+
+    def getColumnValue(self, row):
+        return row.result['line']
+
+class CallColumn(StringColumnDisplay):
+    def getColumnName(self):
+        return "Call"
+
+    def getColumnValue(self, row):
+        return row.result['call']
+
+class MessageColumn(StringColumnDisplay):
+    def getColumnName(self):
+        return "Message"
+
+    def getColumnValue(self, row):
+        return row.result['message']
+
+
+class PrintListResult(AddressableRowObject):
+    def __init__(self, result):
+        self.result = result
+
+    def getAddress(self):
+        return intToAddr(self.result['address'])
+
+def makeDialog():
+    executor = Executor()
+    tbl = createTableChooserDialog("Print calls", executor)
+    _dialog = tbl
+    tbl.addCustomColumn(FileColumn())
+    tbl.addCustomColumn(LineColumn())
+    tbl.addCustomColumn(FuncNameColumn())
+    tbl.addCustomColumn(FunctionColumn())
+    tbl.addCustomColumn(CallColumn())
+    tbl.addCustomColumn(MessageColumn())
+    tbl.show()
+    tbl.setMessage("Running...")
+    return tbl
+
 
 def logFunc(instr, addr, name, monitor, tbl):
     #results = ifc.decompileFunction(instr, 0, ConsoleTaskMonitor())
     #print(results.getDecompiledFunction().getC())
+    global _rows
 
     func = FM.getFunctionContaining(addr)
     if func is None:
@@ -245,15 +286,18 @@ def logFunc(instr, addr, name, monitor, tbl):
         val = prop.getRegisterValue(nextAddr, instr.getRegister('r%d' % rLine))
         if val is not None: lineNo = str(val.getValue())
 
-    tbl.add(PrintListResult({
-        'address':  addrToInt(addr),
+    addrI = addrToInt(addr)
+    res = {
+        'address':  addrI,
         'file':     fileName,
         'line':     str(lineNo),
         'funcname': funcName,
         'function': func.getName(),
         'call':     name,
         'message':  msg,
-    }))
+    }
+    tbl.add(PrintListResult(res))
+    _rows[addrI] = res
 
 
 def run():

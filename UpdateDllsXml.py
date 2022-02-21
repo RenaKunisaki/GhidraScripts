@@ -15,8 +15,8 @@ from ghidra.program.model.listing import ParameterImpl
 from ghidra.program.model.symbol import SourceType
 
 #xmlPath    = '/mnt/guilmon/home/rena/projects/games/hax/sfa/data/K'
-#xmlPath    = '/mnt/guilmon/home/rena/projects/games/hax/sfa/data/U0'
-xmlPath    = '/mnt/guilmon/home/rena/projects/games/hax/sfa/data/KD'
+xmlPath    = '/mnt/guilmon/home/rena/projects/games/hax/sfa/browser/data/U0'
+#xmlPath    = '/mnt/guilmon/home/rena/projects/games/hax/sfa/data/KD'
 dllsTree   = ET.parse(os.path.join(xmlPath, 'dlls.xml'))
 dllsXml    = dllsTree.getroot()
 interfaces = ET.parse(os.path.join(xmlPath, 'dllfuncs.xml')).getroot()
@@ -29,8 +29,8 @@ mem = currentProgram.getMemory()
 prgName  = currentProgram.name
 #data     = listing.getDataAt(currentAddress)
 #NUM_DLLS = data .getLength() / data.getComponent(0).getLength()
-#NUM_DLLS = 0x2C2 # U0
-NUM_DLLS = 0x2FC # KD
+NUM_DLLS = 0x2C2 # U0
+#NUM_DLLS = 0x2FC # KD
 
 def addrToInt(addr):
     return int(str(addr), 16)
@@ -54,6 +54,15 @@ def isGenericParamName(name):
         raise ValueError("parameter name is None")
     return name.startswith('param')
 
+def getAllObjDefs():
+    """Get all ObjDef_* types."""
+    objDefs = {}
+    structs = list(DT.allStructures)
+    for struct in structs:
+        if struct.displayName.startswith('ObjDef_'):
+            objDefs[struct.displayName[7:]] = struct
+    return objDefs
+g_objDefs = None
 
 def handleFunc(iDll, iFunc, fp, dll):
     if fp is None or fp < 0x80000000 or fp > 0x81800000: return
@@ -71,7 +80,7 @@ def handleFunc(iDll, iFunc, fp, dll):
         })
     fAddr = eFunc.get('address', None)
     if fAddr is not None:
-        print("fAddr is", type(fAddr).__name__, fAddr)
+        fAddr = int(fAddr, 0)
         if fAddr != fp:
             print("Mismatched addresses for DLL 0x%X function 0x%X: 0x%X vs 0x%X" % (
                 iDll, iFunc, fAddr, fp))
@@ -169,6 +178,31 @@ def handleFunc(iDll, iFunc, fp, dll):
                     iDll, iFunc, ret, eRet.get('type')))
         else: ET.SubElement(eFunc, 'return', {'type': ret})
 
+def handleObjDefs(eDll):
+    # update objparams element with fields from ObjDef_* struct
+    name = eDll.get('name', None)
+    if name is None: return
+    objDef = g_objDefs.get(name, None)
+    if objDef is None: return
+
+    eObjParams = eDll.find('./objparams')
+    if eObjParams is None:
+        eObjParams = ET.SubElement(eDll, 'objParams')
+
+    eObjParams.set('size', '0x%X' % objDef.length)
+    for comp in filter(lambda c: c.offset >= 0x18, objDef.components):
+        eField = eObjParams.find('./param[offset="0x%X"]' % comp.offset)
+        if eField is None: eField = ET.SubElement(eObjParams, 'param')
+        eField.set('offset', '0x%X' % comp.offset)
+        if eField.get('type', None) is None:
+            eField.set('type', str(comp.dataType.displayName))
+        if eField.get('name', None) is None and comp.fieldName is not None:
+            eField.set('name', str(comp.fieldName))
+        if comp.comment:
+            eDesc = eField.find('./description')
+            if eDesc is None: eDesc = ET.SubElement(eField, 'description')
+            eDesc.text = str(comp.comment)
+
 
 def handleDll(idx, obj, addr):
     flags = obj.getComponent(2)
@@ -198,8 +232,14 @@ def handleDll(idx, obj, addr):
         fp = struct.unpack('>I', data)[0] # grumble
         handleFunc(idx, i, fp, dll)
 
+    handleObjDefs(dll)
+
+
+
 
 def run():
+    global g_objDefs
+    g_objDefs = getAllObjDefs()
     startAddr = intToAddr(int(dllsXml.get('tableAddress'), 16))
     data  = listing.getDataAt(startAddr)
     #struc = data .getComponent(0).dataType.dataType
